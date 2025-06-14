@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Event Stream - Research Workflow Logger</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #2196F3;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        button.secondary {
+            background: #757575;
+        }
+        button.secondary:hover {
+            background: #616161;
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.disconnected {
+            background: #F44336;
+            color: white;
+        }
+        .event-stream {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            height: calc(100vh - 140px);
+            overflow-y: auto;
+        }
+        .event {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .event:last-child {
+            border-bottom: none;
+        }
+        .event-time {
+            color: #666;
+            margin-right: 8px;
+        }
+        .event-type {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .event-type.navigation { color: #2196F3; }
+        .event-type.focus { color: #4CAF50; }
+        .event-type.download { color: #FF9800; }
+        .event-type.selection { color: #9C27B0; }
+        .event-type.readability { color: #795548; }
+        .event-type.heartbeat { color: #607D8B; }
+        .event-details {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Event Stream</h1>
+            <div class="controls">
+                <div id="connection-status" class="status disconnected">Disconnected</div>
+                <button id="clear-btn" class="secondary">Clear Events</button>
+                <button id="export-btn" class="secondary">Export Events</button>
+            </div>
+        </div>
+        <div id="event-stream" class="event-stream"></div>
+    </div>
+    <script src="stream.js"></script>
+</body>
+</html> 
