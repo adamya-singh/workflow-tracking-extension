@@ -60,18 +60,35 @@ function addEvent(event) {
 // Format event details based on event type
 function formatEventDetails(event) {
     switch (event.type) {
-        case 'navigation':
+        case 'navigation_committed':
+        case 'navigation_completed':
             return `Tab ${event.tabId} | ${event.url}${event.searchQuery ? ` | Search: ${event.searchQuery}` : ''}`;
-        case 'focus':
-            return `Tab ${event.tabId} | ${event.url}`;
-        case 'download':
+        case 'tab_activated':
+        case 'tab_updated':
+        case 'tab_removed':
+            return `Tab ${event.tabId} | ${event.url || 'N/A'}${event.changeInfo ? ` | Changes: ${JSON.stringify(event.changeInfo)}` : ''}`;
+        case 'download_created':
             return `${event.filename} | ${event.url} | ${event.mime}`;
+        case 'download_changed':
+        case 'download_erased':
+            return `Download ID: ${event.downloadId || event.downloadDelta?.id} | ${JSON.stringify(event.downloadDelta || {})}`;
         case 'selection':
             return `Tab ${event.tabId} | "${event.selectedText}"`;
+        case 'copy':
+            return `Tab ${event.tabId} | "${event.copiedText}"`;
         case 'readability':
             return `Tab ${event.tabId} | ${event.title} | ${event.wordCount} words`;
         case 'heartbeat':
             return `Tab ${event.tabId} | ${event.secondsVisible}s visible`;
+        case 'error':
+            return `${event.error}${event.details ? ` | ${event.details}` : ''}`;
+        case 'connection':
+            return `${event.action} | ${event.portId}`;
+        case 'message_received':
+            return `From: ${typeof event.sender === 'string' ? event.sender : `Tab ${event.sender.tabId}`} | Type: ${event.message.type}`;
+        case 'extension_startup':
+        case 'extension_installed':
+            return event.details ? JSON.stringify(event.details) : '';
         default:
             return JSON.stringify(event);
     }
