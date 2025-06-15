@@ -440,6 +440,257 @@ function setForceLayout() {
     network.setOptions(options);
 }
 
+// Smart View layout - groups events by page with hierarchical levels
+function setSmartLayout() {
+    console.log("Smart View layout requested");
+    
+    // Group events by page and assign hierarchical levels
+    const pageGroups = analyzePageGroups();
+    
+    // Update nodes with level information for hierarchical layout
+    updateNodesWithLevels(pageGroups);
+    
+    // Apply hierarchical layout with custom levels
+    const options = {
+        layout: {
+            hierarchical: {
+                direction: 'UD', // Top to bottom
+                sortMethod: 'directed',
+                levelSeparation: 120,
+                nodeSpacing: 80,
+                treeSpacing: 100,
+                blockShifting: true,
+                edgeMinimization: true,
+                parentCentralization: true
+            }
+        },
+        physics: { 
+            enabled: false 
+        },
+        nodes: {
+            shape: 'box',
+            margin: 10,
+            font: {
+                size: 11,
+                align: 'center'
+            },
+            borderWidth: 2,
+            shadow: {
+                enabled: true,
+                color: 'rgba(0,0,0,0.2)',
+                size: 5,
+                x: 2,
+                y: 2
+            }
+        },
+        edges: {
+            arrows: {
+                to: { enabled: true, scaleFactor: 0.8 }
+            },
+            color: '#666',
+            width: 2,
+            smooth: {
+                type: 'cubicBezier',
+                forceDirection: 'vertical',
+                roundness: 0.4
+            }
+        }
+    };
+    
+    network.setOptions(options);
+    
+    // Fit the view to show the entire hierarchy
+    setTimeout(() => {
+        network.fit({
+            animation: {
+                duration: 1000,
+                easingFunction: 'easeInOutQuad'
+            }
+        });
+    }, 100);
+}
+
+// Analyze events and group them by page visits
+function analyzePageGroups() {
+    const pageGroups = [];
+    let currentGroup = null;
+    let currentUrl = null;
+    let level = 0;
+    
+    // Sort events by timestamp to ensure chronological order
+    const sortedEvents = [...events].sort((a, b) => a.timeStamp - b.timeStamp);
+    
+    sortedEvents.forEach(event => {
+        // Check if this is a navigation event that indicates a page change
+        if (event.type === 'navigation_committed' && event.url !== currentUrl) {
+            // Start a new page group
+            if (currentGroup && currentGroup.events.length > 0) {
+                pageGroups.push(currentGroup);
+                level++;
+            }
+            
+            currentUrl = event.url;
+            currentGroup = {
+                url: currentUrl,
+                level: level,
+                events: [],
+                startTime: event.timeStamp,
+                title: getPageTitle(currentUrl)
+            };
+        }
+        
+        // If we don't have a current group yet, create one
+        if (!currentGroup) {
+            currentUrl = event.url || 'Unknown';
+            currentGroup = {
+                url: currentUrl,
+                level: level,
+                events: [],
+                startTime: event.timeStamp,
+                title: getPageTitle(currentUrl)
+            };
+        }
+        
+        // Add event to current group
+        currentGroup.events.push(event);
+        currentGroup.endTime = event.timeStamp;
+    });
+    
+    // Add the last group
+    if (currentGroup && currentGroup.events.length > 0) {
+        pageGroups.push(currentGroup);
+    }
+    
+    return pageGroups;
+}
+
+// Extract a readable title from URL
+function getPageTitle(url) {
+    if (!url) return 'Unknown Page';
+    
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname;
+        const pathname = urlObj.pathname;
+        
+        // For extension pages
+        if (url.startsWith('chrome-extension://')) {
+            if (url.includes('stream.html')) return 'Event Stream';
+            if (url.includes('graph.html')) return 'Event Graph';
+            return 'Extension Page';
+        }
+        
+        // For regular websites
+        if (hostname.includes('google.com')) return 'Google';
+        if (hostname.includes('github.com')) return 'GitHub';
+        if (hostname.includes('stackoverflow.com')) return 'Stack Overflow';
+        
+        // Default to hostname
+        return hostname.replace('www.', '');
+    } catch (e) {
+        return 'Unknown Page';
+    }
+}
+
+// Update nodes with hierarchical level information
+function updateNodesWithLevels(pageGroups) {
+    // Clear existing nodes and edges
+    nodes.clear();
+    edges.clear();
+    
+    let nodePositionInLevel = {};
+    
+    pageGroups.forEach((group, groupIndex) => {
+        const level = group.level;
+        
+        // Initialize position counter for this level
+        if (!nodePositionInLevel[level]) {
+            nodePositionInLevel[level] = 0;
+        }
+        
+        // Add a page header node
+        const pageHeaderId = `page_${groupIndex}`;
+        const pageHeaderNode = {
+            id: pageHeaderId,
+            label: group.title,
+            level: level,
+            color: {
+                background: '#E3F2FD',
+                border: '#1976D2'
+            },
+            font: {
+                size: 14,
+                color: '#1976D2',
+                bold: true
+            },
+            shape: 'box',
+            margin: 15,
+            borderWidth: 3
+        };
+        nodes.add(pageHeaderNode);
+        
+        // Add events for this page group
+        group.events.forEach((event, eventIndex) => {
+            const category = EVENT_CATEGORIES[event.type] || 'Unknown';
+            const color = CATEGORY_COLORS[category] || '#999999';
+            
+            const node = {
+                id: event.id,
+                label: event.type,
+                level: level,
+                color: {
+                    background: color,
+                    border: darkenColor(color, 20)
+                },
+                title: formatEventTooltip(event),
+                category: category,
+                shape: 'dot',
+                size: 15
+            };
+            
+            nodes.add(node);
+            
+            // Connect first event to page header
+            if (eventIndex === 0) {
+                edges.add({
+                    id: `page_edge_${pageHeaderId}_${event.id}`,
+                    from: pageHeaderId,
+                    to: event.id,
+                    color: '#1976D2',
+                    width: 3
+                });
+            }
+            
+            // Connect events within the same page group
+            if (eventIndex > 0) {
+                const previousEvent = group.events[eventIndex - 1];
+                edges.add({
+                    id: `group_edge_${previousEvent.id}_${event.id}`,
+                    from: previousEvent.id,
+                    to: event.id,
+                    color: '#999'
+                });
+            }
+        });
+        
+        // Connect this page to the previous page
+        if (groupIndex > 0) {
+            const previousGroup = pageGroups[groupIndex - 1];
+            const previousPageHeaderId = `page_${groupIndex - 1}`;
+            
+            edges.add({
+                id: `nav_edge_${previousPageHeaderId}_${pageHeaderId}`,
+                from: previousPageHeaderId,
+                to: pageHeaderId,
+                color: '#FF5722',
+                width: 4,
+                dashes: [10, 5],
+                label: 'Navigate'
+            });
+        }
+    });
+}
+
 // Event listeners
 clearBtn.addEventListener('click', clearGraph);
 exportBtn.addEventListener('click', exportEvents);
@@ -454,6 +705,7 @@ jsonImport.addEventListener('change', (e) => {
 document.getElementById('timeline-layout').addEventListener('click', setTimelineLayout);
 document.getElementById('hierarchical-layout').addEventListener('click', setHierarchicalLayout);
 document.getElementById('force-layout').addEventListener('click', setForceLayout);
+document.getElementById('smart-layout').addEventListener('click', setSmartLayout);
 
 // Initialize everything
 document.addEventListener('DOMContentLoaded', () => {
