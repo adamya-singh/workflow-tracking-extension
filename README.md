@@ -1,5 +1,9 @@
 # Research Workflow Logger
 
+![Example Event Graph](assets/event-graph-example.png)
+
+*A sample visualization of a research workflow session as a directed event graph.*
+
 A comprehensive Chrome extension for tracking and visualizing user research workflows by monitoring browser activities, navigation patterns, and content interactions.
 
 ## 🎯 Purpose
