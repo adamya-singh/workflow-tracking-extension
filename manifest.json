@@ -28,7 +28,7 @@
       "default_popup": "popup.html"
     },
     "web_accessible_resources": [{
-      "resources": ["stream.html"],
+      "resources": ["stream.html", "graph.html"],
       "matches": ["<all_urls>"]
     }]
 }
