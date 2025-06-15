@@ -1,6 +1,7 @@
 // Listen for copy events
 document.addEventListener('copy', (event) => {
-    const text = event.clipboardData.getData('text');
+    const selection = window.getSelection();
+    const text = selection.toString();
     chrome.runtime.sendMessage({
         type: 'copy',
         text
