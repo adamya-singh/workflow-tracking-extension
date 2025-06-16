@@ -917,6 +917,19 @@ function analyzeBucketGroups(events) {
         return false;
     }
     
+    // Helper function to check if navigation events should be grouped together
+    function shouldGroupNavigationEvents(currentBucket, event) {
+        if (!currentBucket || currentBucket.bucketName !== 'page_navigation') {
+            return false;
+        }
+        
+        // Group navigation events within 1 second of each other
+        const timeDiff = event.timeStamp - currentBucket.endTime;
+        const timeThreshold = 1000; // 1 second in milliseconds
+        
+        return timeDiff <= timeThreshold;
+    }
+    
     sortedEvents.forEach(event => {
         const bucketName = BUCKET_MAPPING[event.type];
         
@@ -927,7 +940,7 @@ function analyzeBucketGroups(events) {
         const shouldCreateNewBucket = !currentBucket || 
             currentBucket.bucketName !== bucketName || 
             !areEventsRelated(currentBucket.events[currentBucket.events.length - 1], event) ||
-            (bucketName === 'page_navigation' && isPageChange(event));
+            (bucketName === 'page_navigation' && isPageChange(event) && !shouldGroupNavigationEvents(currentBucket, event));
         
         if (shouldCreateNewBucket) {
             // Save previous bucket if it exists and has events
