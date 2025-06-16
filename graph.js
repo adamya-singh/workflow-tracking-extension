@@ -50,6 +50,53 @@ const CATEGORY_COLORS = {
     'Secondary Events': '#9E9E9E'
 };
 
+// Bucket mapping for Smart Bucket View
+const BUCKET_MAPPING = {
+    // Page Navigation (consolidated)
+    'navigation_committed': 'page_navigation',
+    'navigation_completed': 'page_navigation',
+    'tab_updated': 'page_navigation', // Include tab updates with navigation
+    'tab_activated': 'page_navigation', // Include tab activation with navigation
+    
+    // Page Interaction (consolidated)
+    'selection': 'page_interaction',
+    'copy': 'page_interaction', 
+    'download_created': 'page_interaction',
+    'readability': 'page_interaction',
+    
+    // Focus/Context (consolidated)
+    'window_focus': 'tab_focus',
+    'visibility_change': 'tab_focus',
+    'heartbeat': 'tab_focus',
+    
+    // System & Extension
+    'extension_startup': 'system_extension',
+    'extension_installed': 'system_extension',
+    'content_script_loaded': 'system_extension',
+    
+    // Resource Transfers
+    'download_changed': 'resource_transfers',
+    'download_erased': 'resource_transfers',
+    
+    // Inter-Process Comms (mostly filtered)
+    'message_received': 'inter_process_comms',
+    'connection': 'inter_process_comms',
+    
+    // Errors
+    'error': 'errors',
+    'content_script_error': 'errors'
+};
+
+const BUCKET_DISPLAY = {
+    'page_navigation': { label: 'Navigation', color: '#2196F3', priority: 1 },
+    'page_interaction': { label: 'Interactions', color: '#9C27B0', priority: 2 },
+    'tab_focus': { label: 'Focus/Context', color: '#4CAF50', priority: 3 },
+    'resource_transfers': { label: 'Downloads', color: '#795548', priority: 4 },
+    'system_extension': { label: 'System', color: '#607D8B', priority: 5 },
+    'inter_process_comms': { label: 'Comms', color: '#9E9E9E', priority: 6, hidden: true },
+    'errors': { label: 'Errors', color: '#F44336', priority: 7 }
+};
+
 // Global variables
 let events = [];
 let network = null;
@@ -57,6 +104,8 @@ let nodes = new vis.DataSet([]);
 let edges = new vis.DataSet([]);
 let port = null;
 let activeFilters = new Set(Object.keys(CATEGORY_COLORS));
+let currentLayoutMode = 'timeline'; // Track current layout mode
+let currentBucketInstances = []; // Store bucket instances for export
 
 // DOM elements
 const graphContainer = document.getElementById('graph');
@@ -120,9 +169,17 @@ function initializeGraph() {
     network.on('click', function (params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
-            const event = events.find(e => e.id === nodeId);
-            if (event) {
-                showEventDetails(event);
+            
+            // Check if it's a bucket node
+            if (nodeId.startsWith('bucket_')) {
+                const node = nodes.get(nodeId);
+                showBucketDetails(node);
+            } else {
+                // Handle regular event nodes
+                const event = events.find(e => e.id === nodeId);
+                if (event) {
+                    showEventDetails(event);
+                }
             }
         }
     });
@@ -305,6 +362,25 @@ function showEventDetails(event) {
     alert(`Event Details:\n\n${JSON.stringify(event, null, 2)}`);
 }
 
+// Show detailed bucket information
+function showBucketDetails(bucketNode) {
+    const bucketData = bucketNode.bucketData;
+    const display = BUCKET_DISPLAY[bucketNode.bucketName];
+    
+    let details = `=== ${display.label} Bucket ===\n\n`;
+    details += `Total Events: ${bucketData.events.length}\n`;
+    details += `Metrics: ${JSON.stringify(bucketData.metrics, null, 2)}\n\n`;
+    details += `Recent Events:\n`;
+    
+    bucketData.events
+        .slice(-5) // Show last 5 events
+        .forEach(event => {
+            details += `• ${event.type} - ${new Date(event.timeStamp).toLocaleTimeString()}\n`;
+        });
+    
+    alert(details);
+}
+
 // Darken a color by a percentage
 function darkenColor(color, percent) {
     const num = parseInt(color.replace("#", ""), 16);
@@ -358,13 +434,32 @@ function clearGraph() {
     updateStats();
 }
 
-// Export current events
+// Export current events or bucket data
 function exportEvents() {
-    const blob = new Blob([JSON.stringify(events, null, 2)], { type: 'application/json' });
+    let dataToExport;
+    let filename;
+    
+    if (currentLayoutMode === 'smart-bucket' && currentBucketInstances.length > 0) {
+        // Export bucket instances with metadata
+        dataToExport = {
+            type: 'smart-bucket-data',
+            exportedAt: new Date().toISOString(),
+            totalEvents: events.length,
+            bucketInstances: currentBucketInstances,
+            rawEvents: events // Include raw events for reference
+        };
+        filename = `smart-bucket-workflow-${new Date().toISOString()}.json`;
+    } else {
+        // Export raw events
+        dataToExport = events;
+        filename = `event-graph-${new Date().toISOString()}.json`;
+    }
+    
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `event-graph-${new Date().toISOString()}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -396,8 +491,22 @@ function importFromJSON(file) {
     reader.readAsText(file);
 }
 
+// Update export button text based on current layout mode
+function updateExportButtonText() {
+    const exportBtn = document.getElementById('export-btn');
+    if (currentLayoutMode === 'smart-bucket') {
+        exportBtn.textContent = 'Export Bucket Data';
+        exportBtn.title = 'Export processed bucket instances and workflow data';
+    } else {
+        exportBtn.textContent = 'Export Data';
+        exportBtn.title = 'Export raw event data';
+    }
+}
+
 // Layout controls
 function setTimelineLayout() {
+    currentLayoutMode = 'timeline';
+    updateExportButtonText();
     const options = {
         layout: {
             hierarchical: {
@@ -413,6 +522,8 @@ function setTimelineLayout() {
 }
 
 function setHierarchicalLayout() {
+    currentLayoutMode = 'hierarchical';
+    updateExportButtonText();
     const options = {
         layout: {
             hierarchical: {
@@ -428,6 +539,8 @@ function setHierarchicalLayout() {
 }
 
 function setForceLayout() {
+    currentLayoutMode = 'force';
+    updateExportButtonText();
     const options = {
         layout: {
             hierarchical: false
@@ -443,6 +556,8 @@ function setForceLayout() {
 // Smart View layout - groups events by page with hierarchical levels
 function setSmartLayout() {
     console.log("Smart View layout requested");
+    currentLayoutMode = 'smart';
+    updateExportButtonText();
     
     // Group events by page and assign hierarchical levels
     const pageGroups = analyzePageGroups();
@@ -691,6 +806,303 @@ function updateNodesWithLevels(pageGroups) {
     });
 }
 
+// Smart Bucket View layout - groups events by semantic purpose into 8 buckets
+function setSmartBucketLayout() {
+    console.log("Smart Bucket layout requested");
+    
+    currentLayoutMode = 'smart-bucket';
+    const bucketInstances = analyzeBucketGroups(events);
+    currentBucketInstances = bucketInstances; // Store for export
+    updateNodesWithBuckets(bucketInstances);
+    updateExportButtonText();
+    
+    const options = {
+        layout: {
+            hierarchical: {
+                direction: 'UD', // Top to bottom for page navigation
+                sortMethod: 'directed',
+                levelSeparation: 120,
+                nodeSpacing: 80,
+                treeSpacing: 100,
+                blockShifting: true,
+                edgeMinimization: true,
+                parentCentralization: true
+            }
+        },
+        physics: { enabled: false },
+        nodes: {
+            shape: 'box',
+            margin: 10,
+            font: {
+                size: 11,
+                align: 'center',
+                color: '#fff'
+            },
+            borderWidth: 2,
+            shadow: {
+                enabled: true,
+                color: 'rgba(0,0,0,0.2)',
+                size: 5,
+                x: 2,
+                y: 2
+            }
+        },
+        edges: {
+            arrows: {
+                to: { enabled: true, scaleFactor: 0.8 }
+            },
+            color: '#666',
+            width: 2,
+            smooth: {
+                type: 'cubicBezier',
+                forceDirection: 'vertical',
+                roundness: 0.4
+            }
+        }
+    };
+    
+    network.setOptions(options);
+    
+    // Fit the view
+    setTimeout(() => {
+        network.fit({
+            animation: {
+                duration: 1000,
+                easingFunction: 'easeInOutQuad'
+            }
+        });
+    }, 100);
+}
+
+// Analyze events and create chronological bucket instances
+function analyzeBucketGroups(events) {
+    const bucketInstances = [];
+    let currentBucket = null;
+    let bucketInstanceCounter = 0;
+    let currentPageUrl = null;
+    
+    // Sort events by timestamp to ensure chronological order
+    const sortedEvents = [...events].sort((a, b) => a.timeStamp - b.timeStamp);
+    
+    // Helper function to check if events are related
+    function areEventsRelated(event1, event2) {
+        // If they're the same type, they're related
+        if (event1.type === event2.type) return true;
+        
+        // Navigation-related events are related
+        const navigationEvents = ['navigation_committed', 'navigation_completed', 'tab_updated', 'tab_activated'];
+        if (navigationEvents.includes(event1.type) && navigationEvents.includes(event2.type)) return true;
+        
+        // Focus-related events are related
+        const focusEvents = ['window_focus', 'visibility_change', 'heartbeat'];
+        if (focusEvents.includes(event1.type) && focusEvents.includes(event2.type)) return true;
+        
+        // Interaction events are related
+        const interactionEvents = ['selection', 'copy', 'download_created', 'readability'];
+        if (interactionEvents.includes(event1.type) && interactionEvents.includes(event2.type)) return true;
+        
+        return false;
+    }
+    
+    // Helper function to check if this is a page change
+    function isPageChange(event) {
+        // Check for navigation events that indicate a page change
+        if (event.type === 'navigation_committed' || event.type === 'tab_activated') {
+            const eventUrl = event.url;
+            if (eventUrl && eventUrl !== currentPageUrl) {
+                currentPageUrl = eventUrl;
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    sortedEvents.forEach(event => {
+        const bucketName = BUCKET_MAPPING[event.type];
+        
+        // Skip unmapped events or hidden buckets
+        if (!bucketName || BUCKET_DISPLAY[bucketName]?.hidden) return;
+        
+        // Check if we need to start a new bucket instance
+        const shouldCreateNewBucket = !currentBucket || 
+            currentBucket.bucketName !== bucketName || 
+            !areEventsRelated(currentBucket.events[currentBucket.events.length - 1], event) ||
+            (bucketName === 'page_navigation' && isPageChange(event));
+        
+        if (shouldCreateNewBucket) {
+            // Save previous bucket if it exists and has events
+            if (currentBucket && currentBucket.events.length > 0) {
+                currentBucket.metrics = calculateBucketMetrics(currentBucket.bucketName, currentBucket.events);
+                bucketInstances.push(currentBucket);
+            }
+            
+            // Start new bucket instance
+            currentBucket = {
+                id: `bucket_${bucketName}_${bucketInstanceCounter++}`,
+                bucketName: bucketName,
+                events: [],
+                startTime: event.timeStamp,
+                endTime: event.timeStamp,
+                pageUrl: event.url || null // Store the page URL for navigation buckets
+            };
+        }
+        
+        // Add event to current bucket
+        currentBucket.events.push(event);
+        currentBucket.endTime = event.timeStamp;
+    });
+    
+    // Add the final bucket
+    if (currentBucket && currentBucket.events.length > 0) {
+        currentBucket.metrics = calculateBucketMetrics(currentBucket.bucketName, currentBucket.events);
+        bucketInstances.push(currentBucket);
+    }
+    
+    return bucketInstances;
+}
+
+// Calculate bucket-specific metrics
+function calculateBucketMetrics(bucketName, events) {
+    const metrics = { count: events.length };
+    
+    switch(bucketName) {
+        case 'tab_focus':
+            metrics.dwellTime = events.filter(e => e.type === 'heartbeat')
+                                    .reduce((sum, e) => sum + (e.secondsVisible || 15), 0);
+            metrics.focusChanges = events.filter(e => e.type === 'tab_activated').length;
+            break;
+        case 'page_interaction':
+            metrics.selections = events.filter(e => e.type === 'selection').length;
+            metrics.copies = events.filter(e => e.type === 'copy').length;
+            metrics.downloads = events.filter(e => e.type === 'download_created').length;
+            metrics.readability = events.filter(e => e.type === 'readability').length;
+            break;
+        case 'resource_transfers':
+            metrics.completed = events.filter(e => e.type === 'download_erased').length;
+            break;
+        case 'page_navigation':
+            metrics.pageViews = events.filter(e => e.type === 'navigation_committed').length;
+            break;
+    }
+    
+    return metrics;
+}
+
+// Create hierarchical bucket nodes and edges
+function updateNodesWithBuckets(bucketInstances) {
+    nodes.clear();
+    edges.clear();
+    
+    // Group buckets by page levels
+    let currentLevel = 0;
+    let currentPageUrl = null;
+    let levelPositions = {}; // Track horizontal position within each level
+    
+    // Assign levels and positions
+    bucketInstances.forEach((bucketInstance, index) => {
+        const display = BUCKET_DISPLAY[bucketInstance.bucketName];
+        
+        // Check if this is a new page navigation
+        if (bucketInstance.bucketName === 'page_navigation') {
+            if (bucketInstance.pageUrl !== currentPageUrl) {
+                // New page = new level going down
+                currentPageUrl = bucketInstance.pageUrl;
+                currentLevel++;
+                levelPositions[currentLevel] = 0; // Reset horizontal position for new level
+            }
+        }
+        
+        // Assign level and horizontal position
+        bucketInstance.hierarchyLevel = currentLevel;
+        if (!levelPositions[currentLevel]) {
+            levelPositions[currentLevel] = 0;
+        }
+        bucketInstance.horizontalPosition = levelPositions[currentLevel]++;
+    });
+    
+    // Create bucket instance nodes with hierarchy
+    bucketInstances.forEach((bucketInstance, index) => {
+        const display = BUCKET_DISPLAY[bucketInstance.bucketName];
+        const nodeSize = Math.max(30, Math.min(80, 30 + bucketInstance.events.length * 2));
+        
+        // Create label with page info for navigation buckets
+        let label = `${display.label}\n(${bucketInstance.events.length})`;
+        if (bucketInstance.bucketName === 'page_navigation' && bucketInstance.pageUrl) {
+            try {
+                const url = new URL(bucketInstance.pageUrl);
+                const pageName = url.hostname.replace('www.', '');
+                label = `${display.label}\n${pageName}\n(${bucketInstance.events.length})`;
+            } catch (e) {
+                // If URL parsing fails, use original label
+            }
+        }
+        
+        const node = {
+            id: bucketInstance.id,
+            label: label,
+            color: {
+                background: display.color,
+                border: darkenColor(display.color, 20)
+            },
+            size: nodeSize,
+            title: formatBucketTooltip(bucketInstance.bucketName, bucketInstance),
+            bucketData: bucketInstance,
+            bucketName: bucketInstance.bucketName,
+            level: bucketInstance.hierarchyLevel // Use hierarchy level for layout
+        };
+        
+        nodes.add(node);
+        
+        // Create edges with improved logic
+        if (index > 0) {
+            const previousInstance = bucketInstances[index - 1];
+            const isNavigationToNewPage = bucketInstance.bucketName === 'page_navigation' && 
+                                         bucketInstance.pageUrl !== previousInstance.pageUrl;
+            
+            const edge = {
+                id: `workflow_${previousInstance.id}_${bucketInstance.id}`,
+                from: previousInstance.id,
+                to: bucketInstance.id,
+                color: isNavigationToNewPage ? '#FF5722' : '#666',
+                width: isNavigationToNewPage ? 3 : 2,
+                dashes: isNavigationToNewPage ? [10, 5] : false,
+                label: isNavigationToNewPage ? 'Navigate' : ''
+            };
+            edges.add(edge);
+        }
+    });
+}
+
+// Format bucket tooltip
+function formatBucketTooltip(bucketName, bucketData) {
+    const display = BUCKET_DISPLAY[bucketName];
+    let tooltip = `<strong>${display.label} Instance</strong><br>`;
+    tooltip += `Events: ${bucketData.events.length}<br>`;
+    
+    // Show page URL for navigation buckets
+    if (bucketName === 'page_navigation' && bucketData.pageUrl) {
+        const url = new URL(bucketData.pageUrl);
+        tooltip += `Page: ${url.hostname}${url.pathname}<br>`;
+    }
+    
+    if (bucketData.startTime) {
+        tooltip += `Start: ${new Date(bucketData.startTime).toLocaleTimeString()}<br>`;
+        tooltip += `End: ${new Date(bucketData.endTime).toLocaleTimeString()}<br>`;
+        tooltip += `Duration: ${formatDuration(bucketData.endTime - bucketData.startTime)}<br>`;
+    }
+    
+    // Add bucket-specific metrics
+    if (bucketData.metrics) {
+        Object.entries(bucketData.metrics).forEach(([key, value]) => {
+            if (key !== 'count') {
+                tooltip += `${key}: ${value}<br>`;
+            }
+        });
+    }
+    
+    return tooltip;
+}
+
 // Event listeners
 clearBtn.addEventListener('click', clearGraph);
 exportBtn.addEventListener('click', exportEvents);
@@ -706,10 +1118,12 @@ document.getElementById('timeline-layout').addEventListener('click', setTimeline
 document.getElementById('hierarchical-layout').addEventListener('click', setHierarchicalLayout);
 document.getElementById('force-layout').addEventListener('click', setForceLayout);
 document.getElementById('smart-layout').addEventListener('click', setSmartLayout);
+document.getElementById('smart-bucket-layout').addEventListener('click', setSmartBucketLayout);
 
 // Initialize everything
 document.addEventListener('DOMContentLoaded', () => {
     initializeGraph();
     createCategoryFilters();
+    updateExportButtonText();
     connect();
 }); 
